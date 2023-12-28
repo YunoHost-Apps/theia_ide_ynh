@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# Script d'installation de Theia IDE pour YunoHost
+
+# Vérifier l'environnement YunoHost
+YNH_APP_INSTANCE_NAME=$1
+YNH_APP_INSTANCE_NUMBER=$2
+YNH_APP_ID=$YNH_APP_INSTANCE_NAME
+
+# Définir les variables
+app=$YNH_APP_INSTANCE_NAME
+domain=$(ynh_app_setting_get --app=$app --key=domain)
+path_url=$(ynh_app_setting_get --app=$app --key=path)
+
+# Créer un répertoire pour l'application
+ynh_script_progression --message="Création d'un répertoire pour Theia IDE"
+final_path=/opt/$YNH_APP_ID
+ynh_app_setting_set --app=$app --key=final_path --value=$final_path
+sudo mkdir -p $final_path
+sudo chown -R $app: $final_path
+
+# Installation des dépendances
+ynh_script_progression --message="Installation des dépendances"
+ynh_install_app_dependencies nodejs yarn
+
+# Configurer Node.js et Yarn (si nécessaire)
+
+# Créer le fichier package.json
+ynh_script_progression --message="Création du fichier package.json"
+cat > $final_path/package.json <<EOF
+{
+  "private": true,
+  "dependencies": {
+    "@theia/callhierarchy": "latest",
+    "@theia/file-search": "latest",
+    # Ajouter d'autres extensions Theia ici
+  },
+  "devDependencies": {
+    "@theia/cli": "latest"
+  },
+  "scripts": {
+    "prepare": "yarn run clean && yarn build && yarn run download:plugins",
+    "clean": "theia clean",
+    "build": "theia build --mode development",
+    "start": "theia start --plugins=local-dir:plugins --hostname 0.0.0.0 --port 8080"
+  }
+}
+EOF
+
+# Installer et construire Theia
+ynh_script_progression --message="Installation et construction de Theia IDE"
+sudo ynh_exec_as $app yarn --cwd $final_path install
+sudo ynh_exec_as $app yarn --cwd $final_path build
+
+# Configurer NGINX
+ynh_script_progression --message="Configuration de NGINX"
+ynh_add_nginx_config
+
+# Démarrer Theia IDE
+ynh_script_progression --message="Démarrage de Theia IDE"
+ynh_systemd_action --service_name=$app --action=start
+
+# Opérations de nettoyage
+ynh_script_progression --message="Nettoyage"
+# Commandes de nettoyage si nécessaire
+
+# Marquer la fin du script
+ynh_script_progression --message="Installation de Theia IDE terminée" --last
