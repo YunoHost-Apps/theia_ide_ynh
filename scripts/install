@@ -1,68 +1,92 @@
 #!/bin/bash
 
-# Script d'installation de Theia IDE pour YunoHost
+#=================================================
+# GENERIC START
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
 
-# Vérifier l'environnement YunoHost
-YNH_APP_INSTANCE_NAME=$1
-YNH_APP_INSTANCE_NUMBER=$2
-YNH_APP_ID=$YNH_APP_INSTANCE_NAME
+source _common.sh
+source /usr/share/yunohost/helpers
 
-# Définir les variables
-app=$YNH_APP_INSTANCE_NAME
-domain=$(ynh_app_setting_get --app=$app --key=domain)
-path_url=$(ynh_app_setting_get --app=$app --key=path)
+#=================================================
+# APP "BUILD" (DEPLOYING SOURCES, VENV, COMPILING ETC)
+#=================================================
+# DOWNLOAD, CHECK AND UNPACK SOURCE
+#=================================================
+ynh_script_progression --message="Setting up source files..." --weight=1
 
-# Créer un répertoire pour l'application
-ynh_script_progression --message="Création d'un répertoire pour Theia IDE"
-final_path=/opt/$YNH_APP_ID
-ynh_app_setting_set --app=$app --key=final_path --value=$final_path
-sudo mkdir -p $final_path
-sudo chown -R $app: $final_path
+# Création du répertoire d'installation de Theia
+ynh_script_progression --message="Creating installation directory..."
+mkdir -p "$install_dir"
+chown -R $app:www-data "$install_dir"
 
 # Installation des dépendances
-ynh_script_progression --message="Installation des dépendances"
+ynh_script_progression --message="Installing dependencies..."
 ynh_install_app_dependencies nodejs yarn
 
-# Configurer Node.js et Yarn (si nécessaire)
-
-# Créer le fichier package.json
-ynh_script_progression --message="Création du fichier package.json"
-cat > $final_path/package.json <<EOF
+# Configuration du fichier package.json
+ynh_script_progression --message="Configuring package.json..."
+cat > $install_dir/package.json <<EOF
 {
   "private": true,
   "dependencies": {
     "@theia/callhierarchy": "latest",
     "@theia/file-search": "latest",
-    # Ajouter d'autres extensions Theia ici
+    # ...
   },
   "devDependencies": {
     "@theia/cli": "latest"
-  },
-  "scripts": {
-    "prepare": "yarn run clean && yarn build && yarn run download:plugins",
-    "clean": "theia clean",
-    "build": "theia build --mode development",
-    "start": "theia start --plugins=local-dir:plugins --hostname 0.0.0.0 --port 8080"
   }
 }
 EOF
 
-# Installer et construire Theia
-ynh_script_progression --message="Installation et construction de Theia IDE"
-sudo ynh_exec_as $app yarn --cwd $final_path install
-sudo ynh_exec_as $app yarn --cwd $final_path build
+# Installation et construction de Theia
+ynh_script_progression --message="Installing and building Theia IDE..."
+pushd "$install_dir"
+ynh_exec_as $app yarn install
+ynh_exec_as $app yarn theia build
+popd
 
-# Configurer NGINX
-ynh_script_progression --message="Configuration de NGINX"
+#=================================================
+# SYSTEM CONFIGURATION
+#=================================================
+ynh_script_progression --message="Adding system configurations related to Theia IDE..." --weight=1
+
+# Configuration de NGINX
 ynh_add_nginx_config
 
-# Démarrer Theia IDE
-ynh_script_progression --message="Démarrage de Theia IDE"
-ynh_systemd_action --service_name=$app --action=start
+# Configuration du service systemd
+ynh_script_progression --message="Configuring systemd service..."
+ynh_add_systemd_config
 
-# Opérations de nettoyage
-ynh_script_progression --message="Nettoyage"
-# Commandes de nettoyage si nécessaire
+# Intégration du service dans YunoHost
+yunohost service add $app --description="Theia IDE" --log="/var/log/$app/$app.log"
 
-# Marquer la fin du script
-ynh_script_progression --message="Installation de Theia IDE terminée" --last
+# Utilisation de logrotate pour gérer les fichiers journaux
+ynh_use_logrotate
+
+# Configuration de Fail2Ban
+ynh_add_fail2ban_config --logpath="/var/log/nginx/${domain}-error.log" --failregex="Regex to match into the log for a failed login"
+
+#=================================================
+# APP INITIAL CONFIGURATION
+#=================================================
+
+# Ajout d'une configuration (si nécessaire)
+# ...
+
+#=================================================
+# GENERIC FINALIZATION
+#=================================================
+# START SYSTEMD SERVICE
+#=================================================
+ynh_script_progression --message="Starting Theia IDE..." --weight=1
+
+# Démarrage du service systemd
+ynh_systemd_action --service_name=$app --action="start" --log_path="/var/log/$app/$app.log"
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+ynh_script_progression --message="Installation of $app completed" --last
